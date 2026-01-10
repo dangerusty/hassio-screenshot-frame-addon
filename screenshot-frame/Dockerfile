@@ -12,6 +12,9 @@ RUN apk add --no-cache \
     python3 \
     python3-dev \
     py3-pip \
+    py3-aiohttp \
+    py3-requests \
+    py3-pillow \
     build-base \
     openssl-dev \
     libffi-dev \
@@ -19,6 +22,8 @@ RUN apk add --no-cache \
     zlib-dev \
     curl \
     git \
+    chromium \
+    chromium-chromedriver \
     libx11-dev \
     libxcb-dev \
     libxkbcommon-dev \
@@ -29,20 +34,19 @@ RUN apk add --no-cache \
 # Ensure python and pip are available
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
-# Install dependencies using pip
-RUN python -m pip install --no-cache-dir --upgrade pip setuptools && \
-    python -m pip install --no-cache-dir \
-    aiohttp==3.8.4 \
-    requests==2.31.0 \
-    Pillow==10.0.0 \
-    websockets==10.4 \
-    playwright==1.40.0
+# Install websockets via pip with break-system-packages
+RUN python -m pip install --no-cache-dir --break-system-packages \
+    'websockets==10.4'
 
-# Install Playwright browsers
-RUN python -m playwright install chromium
+# Install Playwright from PyPI with visible output for debugging
+RUN python -m pip install --no-cache-dir --break-system-packages \
+    --index-url https://pypi.org/simple/ playwright==1.40.0 || \
+    python -m pip install --no-cache-dir --break-system-packages \
+    --index-url https://pypi.org/simple/ 'playwright>=1.0' || \
+    echo "WARNING: Playwright installation failed, will use system Chromium directly"
 
 # Install samsung-tv-ws-api from xchwarze fork (compatible with websockets==10.4)
-RUN python -m pip install --no-cache-dir \
+RUN python -m pip install --no-cache-dir --break-system-packages \
     git+https://github.com/xchwarze/samsung-tv-ws-api.git
 
 # Create app and data directories
