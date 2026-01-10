@@ -47,11 +47,7 @@ options:
   screensaver_interval: 60
 schema:
   image_provider_url: str
-  image_provider_auth_type:
-    - none
-    - bearer
-    - basic
-    - headers
+  image_provider_auth_type: list(none|bearer|basic|headers)
   image_provider_token: str
   image_provider_token_header: str
   image_provider_token_prefix: str
