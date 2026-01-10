@@ -1,0 +1,7 @@
+# Core dependencies without version constraints
+aiohttp
+requests
+git+https://github.com/xchwarze/samsung-tv-ws-api.git
+Pillow
+websockets
+pyppeteer
