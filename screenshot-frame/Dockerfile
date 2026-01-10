@@ -16,25 +16,11 @@ RUN apk add --no-cache \
     zlib-dev \
     curl \
     git \
-    glib \
-    nss \
-    nspr \
-    dbus \
-    atk \
-    at-spi2-core \
-    libxcomposite \
-    libxrandr \
-    libxinerama \
-    libxtst \
-    libxss \
-    libxdamage \
-    pango \
-    gtk+3.0 \
-    libx11 \
-    libxcb \
-    libxkbcommon \
-    freetype \
-    chromium \
+    libx11-dev \
+    libxcb-dev \
+    libxkbcommon-dev \
+    freetype-dev \
+    mesa-dev \
     ca-certificates
 
 # Install dependencies using pip
