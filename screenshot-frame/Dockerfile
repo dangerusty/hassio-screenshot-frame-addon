@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=1
 # Ensure Python and pip present even if base image is non-python
 RUN apk add --no-cache \
     python3 \
+    python3-dev \
     py3-pip \
     chromium \
     build-base \
