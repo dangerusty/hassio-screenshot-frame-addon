@@ -1,0 +1,64 @@
+configuration:
+  image_provider_url:
+    name: Image provider URL
+    description: URL to fetch a PNG/JPEG or HTML (HTML will be rendered)
+  image_provider_auth_type:
+    name: Provider auth type
+    description: none | bearer | basic | headers
+  image_provider_token:
+    name: Bearer token
+    description: Used only when auth type is bearer
+  image_provider_username:
+    name: Basic auth username
+    description: Used only when auth type is basic
+  image_provider_password:
+    name: Basic auth password
+    description: Used only when auth type is basic
+  image_provider_headers:
+    name: Custom headers (JSON)
+    description: JSON map of headers (only when auth type is headers)
+  interval_seconds:
+    name: Refresh interval (seconds)
+    description: How often to refresh the image
+  http_port:
+    name: HTTP port
+    description: Port to serve the latest image (default 8200)
+  screenshot_width:
+    name: Screenshot width
+    description: Rendered browser width in pixels
+  screenshot_height:
+    name: Screenshot height
+    description: Rendered browser height in pixels
+  screenshot_zoom:
+    name: Screenshot zoom (%)
+    description: Zoom factor; 100 = 1x
+  use_local_tv:
+    name: Upload to Samsung Frame
+    description: Enable direct upload to the TV
+  tv_ip:
+    name: TV IP
+    description: Required when upload is enabled
+  tv_port:
+    name: TV port
+    description: Typically 8002
+  tv_matte:
+    name: Matte style
+    description: Optional matte name
+  tv_show_after_upload:
+    name: Show after upload
+    description: Select the uploaded art immediately
+  tv_replace_last:
+    name: Replace last art
+    description: Overwrite previous art instead of adding new
+  tv_last_art_file:
+    name: Last art cache file
+    description: Path to store the last art ID (used if replace is enabled)
+  screensaver_enabled:
+    name: Screensaver mode
+    description: Cycle local images when enabled
+  screensaver_dir:
+    name: Screensaver directory
+    description: Folder with local images
+  screensaver_interval:
+    name: Screensaver interval (seconds)
+    description: Delay between screensaver images
