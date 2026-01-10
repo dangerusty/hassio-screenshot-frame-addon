@@ -23,6 +23,9 @@ except Exception:
 
 INTERVAL = int(os.environ.get('INTERVAL_SECONDS', os.environ.get('INTERVAL', 300)))
 HTTP_PORT = int(os.environ.get('HTTP_PORT', 8200))
+SCREENSHOT_WIDTH = int(os.environ.get('SCREENSHOT_WIDTH', '1920'))
+SCREENSHOT_HEIGHT = int(os.environ.get('SCREENSHOT_HEIGHT', '1080'))
+SCREENSHOT_ZOOM = int(os.environ.get('SCREENSHOT_ZOOM', '100'))  # percentage: 100 = 100%, 150 = 150%, etc.
 
 # Local TV options (from add-on options.json exported by run.sh)
 TV_IP = os.environ.get('TV_IP') or ''
@@ -238,8 +241,11 @@ async def upload_image_to_tv_async(host: str, port: int, image_path: str, matte:
         return None
 
 
-async def render_url_with_playwright(url: str, headers: dict | None = None, timeout: int = 30000):
+async def render_url_with_playwright(url: str, headers: dict | None = None, timeout: int = 30000, width: int = 1920, height: int = 1080, zoom: int = 100):
     """Render the given URL to a PNG using Playwright and return bytes.
+
+    Args:
+        zoom: Zoom percentage (100 = 100%, 150 = 150%, 50 = 50%)
 
     Raises an exception on failure so the add-on fails fast if Playwright
     cannot render. Playwright is required for this add-on's primary purpose.
@@ -251,7 +257,12 @@ async def render_url_with_playwright(url: str, headers: dict | None = None, time
             browser = await p.chromium.launch(headless=True)
         except Exception:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"]) 
-        context = await browser.new_context()
+        # deviceScaleFactor controls zoom: 1.0 = 100%, 1.5 = 150%, etc.
+        device_scale_factor = zoom / 100.0
+        context = await browser.new_context(
+            viewport={'width': width, 'height': height},
+            device_scale_factor=device_scale_factor
+        )
         if headers:
             await context.set_extra_http_headers({str(k): str(v) for k, v in (headers.items() if isinstance(headers, dict) else [])})
         page = await context.new_page()
@@ -302,7 +313,7 @@ async def screenshot_loop(app):
                                 # If the provider returns HTML, render it with Playwright
                                 if ctype.startswith('text/html') or (len(content) > 0 and content.lstrip().startswith(b'<')):
                                     print('Provider returned HTML; attempting Playwright render')
-                                    rendered = await render_url_with_playwright(IMAGE_PROVIDER_URL, headers=headers)
+                                    rendered = await render_url_with_playwright(IMAGE_PROVIDER_URL, headers=headers, width=SCREENSHOT_WIDTH, height=SCREENSHOT_HEIGHT, zoom=SCREENSHOT_ZOOM)
                                     if rendered:
                                         with open(str(ART_PATH), 'wb') as f:
                                             f.write(rendered)

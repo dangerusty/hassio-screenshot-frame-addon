@@ -25,6 +25,9 @@ options:
   image_provider_headers: ""
   interval_seconds: 300
   http_port: 8200
+  screenshot_width: 1920
+  screenshot_height: 1080
+  screenshot_zoom: 100
   use_local_tv: true
   tv_ip: ""
   tv_port: 8001
@@ -46,6 +49,9 @@ schema:
   image_provider_headers: str?
   interval_seconds: int(60,3600)?
   http_port: int(1024,65535)?
+  screenshot_width: int(320,7680)?
+  screenshot_height: int(240,4320)?
+  screenshot_zoom: int(10,500)?
   use_local_tv: bool?
   tv_ip: str?
   tv_port: int(1024,65535)?

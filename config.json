@@ -17,6 +17,9 @@
 
     "interval_seconds": 300,
     "http_port": 8200,
+    "screenshot_width": 1920,
+    "screenshot_height": 1080,
+    "screenshot_zoom": 100,
 
     "use_local_tv": true,
     "tv_ip": "",
@@ -42,6 +45,9 @@
 
     "interval_seconds": "int",
     "http_port": "int",
+    "screenshot_width": "int",
+    "screenshot_height": "int",
+    "screenshot_zoom": "int",
 
     "use_local_tv": "bool",
     "tv_ip": "str",
