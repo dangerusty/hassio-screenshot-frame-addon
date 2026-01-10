@@ -9,6 +9,9 @@ ENV PYTHONUNBUFFERED=1
 # Install system dependencies for websockets, aiohttp, and Playwright rendering
 # Using apk for Alpine Linux compatibility
 RUN apk add --no-cache \
+    python3 \
+    python3-dev \
+    py3-pip \
     build-base \
     openssl-dev \
     libffi-dev \
@@ -23,8 +26,12 @@ RUN apk add --no-cache \
     mesa-dev \
     ca-certificates
 
+# Ensure python and pip are available
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
 # Install dependencies using pip
-RUN python -m pip install --no-cache-dir \
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools && \
+    python -m pip install --no-cache-dir \
     aiohttp==3.8.4 \
     requests==2.31.0 \
     Pillow==10.0.0 \
