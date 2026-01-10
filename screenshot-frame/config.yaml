@@ -1,7 +1,7 @@
 name: Screenshot to Samsung Frame
 version: "0.1.0"
 slug: screenshot-frame
-description: Periodically screenshots a Home Assistant dashboard and serves it for a Samsung Frame TV (SmartThings integration required).
+description: Periodically screenshots a Home Assistant dashboard and serves it for a Samsung Frame TV.
 startup: application
 boot: auto
 init: false
