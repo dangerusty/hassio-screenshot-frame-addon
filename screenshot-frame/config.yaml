@@ -1,5 +1,5 @@
 name: Screenshot to Samsung Frame
-version: "0.1.22"
+version: "0.1.23"
 slug: screenshot-frame
 description: Periodically screenshots a Home Assistant dashboard and serves it for a Samsung Frame TV.
 startup: application

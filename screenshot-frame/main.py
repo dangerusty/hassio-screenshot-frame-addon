@@ -190,9 +190,9 @@ async def upload_image_to_tv_async(host: str, port: int, image_path: str, matte:
             tv.close()
             logger.debug('[TV UPLOAD] TV connection closed')
 
-            # Persist last art id for future replace attempts
+            # Persist last art id for future replace attempts (only if selection was successful)
             try:
-                if content_id:
+                if content_id and selection_successful:
                     with open(TV_LAST_ART_FILE, 'w') as lf:
                         lf.write(str(content_id))
                     logger.debug(f'[TV UPLOAD] ✓ Cached art ID {content_id} to {TV_LAST_ART_FILE}')
