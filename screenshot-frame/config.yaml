@@ -1,5 +1,5 @@
 name: Screenshot to Samsung Frame
-version: "0.1.23"
+version: "0.1.24"
 slug: screenshot-frame
 description: Periodically screenshots a Home Assistant dashboard and serves it for a Samsung Frame TV.
 startup: application
@@ -40,6 +40,12 @@ options:
   tv_matte: "none"
   tv_show_after_upload: false
   tv_upload_timeout: 60
+  mqtt_enabled: false
+  mqtt_broker: "homeassistant.local"
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_topic_base: "homeassistant"
 schema:
   target_url: str                                   # URL to screenshot (HTML page or image)
   target_auth_type: list(none|bearer|basic|headers)
@@ -62,3 +68,9 @@ schema:
   tv_matte: str?                                    # Matte style name (optional)
   tv_show_after_upload: bool                        # Select the uploaded art immediately
   tv_upload_timeout: int                            # Upload timeout in seconds (default 60)
+  mqtt_enabled: bool                                # Enable Home Assistant MQTT integration
+  mqtt_broker: str                                  # MQTT broker hostname or IP
+  mqtt_port: int                                    # MQTT broker port
+  mqtt_username: str?                               # MQTT username (optional)
+  mqtt_password: str?                               # MQTT password (optional)
+  mqtt_topic_base: str                              # MQTT topic base for discovery

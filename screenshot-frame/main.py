@@ -13,6 +13,13 @@ warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 # pyppeteer for browser automation (Python port of Puppeteer)
 import pyppeteer
 
+# MQTT for Home Assistant integration
+try:
+    import paho.mqtt.client as mqtt
+    MQTT_AVAILABLE = True
+except ImportError:
+    MQTT_AVAILABLE = False
+
 # Configure logging with timestamps
 logging.basicConfig(
     level=logging.INFO,
@@ -68,6 +75,14 @@ TARGET_HEADERS = os.environ.get('TARGET_HEADERS')  # optional JSON map of header
 # Always replace last art file (hard-coded path for persistence)
 TV_LAST_ART_FILE = '/data/last-art-id.txt'
 
+# MQTT configuration (optional Home Assistant integration)
+MQTT_ENABLED = os.environ.get('MQTT_ENABLED', 'false').lower() in ('1','true','yes')
+MQTT_BROKER = os.environ.get('MQTT_BROKER', 'localhost')
+MQTT_PORT = int(os.environ.get('MQTT_PORT', '1883'))
+MQTT_USERNAME = os.environ.get('MQTT_USERNAME')
+MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD')
+MQTT_TOPIC_BASE = os.environ.get('MQTT_TOPIC_BASE', 'homeassistant')  # Discovery uses homeassistant/ prefix
+
 logger.info('Screenshot to Samsung Frame Addon - Starting')
 if DEBUG_LOGGING:
     logger.info('='*60)
@@ -86,13 +101,10 @@ if DEBUG_LOGGING:
         logger.info(f'  TV Show After Upload: {TV_SHOW_AFTER_UPLOAD}')
         logger.info(f'  TV Upload Timeout: {TV_UPLOAD_TIMEOUT}s')
     logger.info(f'  Debug Logging: {DEBUG_LOGGING}')
-    logger.info('='*60)
-
-async def upload_image_to_tv_async(host: str, port: int, image_path: str, matte: str = None, show: bool = True):
-    """Upload image to Samsung TV using sync library in executor."""
-    logger.debug(f'[TV UPLOAD] Starting upload to {host}:{port}')
-    
-    try:
+    logger.info(f'  MQTT: {"ENABLED" if MQTT_ENABLED else "DISABLED"}')
+    if MQTT_ENABLED:
+        logger.info(f'  MQTT Broker: {MQTT_BROKER}:{MQTT_PORT}')
+        logger.info(f'  MQTT Topic Base: {MQTT_TOPIC_BASE}')
         from samsungtvws import SamsungTVArt
     except Exception as e:
         logger.error(f'[TV UPLOAD] ERROR: samsungtvws library not available: {e}')
@@ -227,6 +239,17 @@ _browser = None
 _page = None
 _page_lock = asyncio.Lock()
 
+# Status tracking for API
+_status_lock = asyncio.Lock()
+_last_sync_time = None
+_last_sync_success = False
+_last_error = None
+
+# MQTT client and state
+_mqtt_client = None
+_mqtt_connected = False
+_mqtt_lock = asyncio.Lock()
+
 async def _ensure_browser(width: int, height: int):
     """Ensure browser instance is running. Returns (browser, page)."""
     global _browser, _page
@@ -317,11 +340,158 @@ async def render_url_with_pyppeteer(url: str, headers: dict | None = None, timeo
         return screenshot
 
 
+def _on_mqtt_connect(client, userdata, flags, rc):
+    """MQTT connect callback."""
+    global _mqtt_connected
+    if rc == 0:
+        logger.info('[MQTT] ✓ Connected to MQTT broker')
+        _mqtt_connected = True
+        # Publish discovery messages for sensors
+        try:
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(_mqtt_publish_discovery(), loop)
+        except Exception:
+            pass
+    else:
+        logger.error(f'[MQTT] Connection failed with code {rc}')
+        _mqtt_connected = False
+
+
+def _on_mqtt_disconnect(client, userdata, rc):
+    """MQTT disconnect callback."""
+    global _mqtt_connected
+    _mqtt_connected = False
+    if rc != 0:
+        logger.warning(f'[MQTT] Unexpected disconnection with code {rc}')
+
+
+async def _mqtt_publish_discovery():
+    """Publish Home Assistant MQTT Discovery messages for sensors."""
+    global _mqtt_client
+    if not _mqtt_client or not _mqtt_connected:
+        return
+    
+    device_id = 'screenshot_frame'
+    device_info = {
+        'identifiers': ['screenshot_to_samsung_frame_addon'],
+        'name': 'Screenshot to Samsung Frame',
+        'manufacturer': 'Home Assistant Community',
+        'model': 'Screenshot Frame Add-on',
+    }
+    
+    # Discovery message for last_sync sensor
+    discovery_topic = f'{MQTT_TOPIC_BASE}/sensor/{device_id}/last_sync/config'
+    discovery_payload = {
+        'name': 'Screenshot Frame Last Sync',
+        'unique_id': f'{device_id}_last_sync',
+        'state_topic': f'screenshot_frame/last_sync',
+        'device_class': 'timestamp',
+        'device': device_info,
+    }
+    _mqtt_client.publish(discovery_topic, json.dumps(discovery_payload), retain=True)
+    logger.debug(f'[MQTT] Published discovery for last_sync')
+    
+    # Discovery message for success sensor
+    discovery_topic = f'{MQTT_TOPIC_BASE}/binary_sensor/{device_id}/success/config'
+    discovery_payload = {
+        'name': 'Screenshot Frame Sync Success',
+        'unique_id': f'{device_id}_success',
+        'state_topic': f'screenshot_frame/success',
+        'device_class': 'connectivity',
+        'device': device_info,
+    }
+    _mqtt_client.publish(discovery_topic, json.dumps(discovery_payload), retain=True)
+    logger.debug(f'[MQTT] Published discovery for success')
+    
+    # Discovery message for error sensor
+    discovery_topic = f'{MQTT_TOPIC_BASE}/sensor/{device_id}/error/config'
+    discovery_payload = {
+        'name': 'Screenshot Frame Last Error',
+        'unique_id': f'{device_id}_error',
+        'state_topic': f'screenshot_frame/error',
+        'device': device_info,
+    }
+    _mqtt_client.publish(discovery_topic, json.dumps(discovery_payload), retain=True)
+    logger.debug(f'[MQTT] Published discovery for error')
+
+
+async def _mqtt_update_status():
+    """Publish current status to MQTT."""
+    global _mqtt_client, _mqtt_connected, _last_sync_time, _last_sync_success, _last_error
+    
+    if not MQTT_ENABLED or not _mqtt_client or not _mqtt_connected:
+        return
+    
+    async with _status_lock:
+        try:
+            # Publish last_sync timestamp
+            if _last_sync_time:
+                _mqtt_client.publish('screenshot_frame/last_sync', _last_sync_time.isoformat(), retain=True)
+            
+            # Publish success status as ON/OFF
+            state = 'ON' if _last_sync_success else 'OFF'
+            _mqtt_client.publish('screenshot_frame/success', state, retain=True)
+            
+            # Publish error message (empty if no error)
+            error_msg = _last_error if _last_error else 'None'
+            _mqtt_client.publish('screenshot_frame/error', error_msg, retain=True)
+            
+            logger.debug(f'[MQTT] Published status update (success={_last_sync_success})')
+        except Exception as e:
+            logger.error(f'[MQTT] Error publishing status: {e}')
+
+
+async def _mqtt_connect():
+    """Initialize and connect MQTT client."""
+    global _mqtt_client, _mqtt_connected
+    
+    if not MQTT_ENABLED or not MQTT_AVAILABLE:
+        logger.debug('[MQTT] MQTT disabled or paho-mqtt not available')
+        return
+    
+    try:
+        _mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id='screenshot_frame_addon')
+        _mqtt_client.on_connect = _on_mqtt_connect
+        _mqtt_client.on_disconnect = _on_mqtt_disconnect
+        
+        if MQTT_USERNAME and MQTT_PASSWORD:
+            _mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+            logger.debug(f'[MQTT] Using authentication')
+        
+        logger.debug(f'[MQTT] Connecting to {MQTT_BROKER}:{MQTT_PORT}...')
+        _mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+        _mqtt_client.loop_start()
+        
+        # Give it a moment to connect
+        await asyncio.sleep(2)
+        
+    except Exception as e:
+        logger.error(f'[MQTT] Failed to initialize MQTT: {e}')
+        _mqtt_client = None
+
+
+async def _mqtt_disconnect():
+    """Disconnect MQTT client."""
+    global _mqtt_client, _mqtt_connected
+    
+    if _mqtt_client:
+        try:
+            _mqtt_client.loop_stop()
+            _mqtt_client.disconnect()
+            logger.debug('[MQTT] Disconnected')
+        except Exception:
+            pass
+        finally:
+            _mqtt_client = None
+            _mqtt_connected = False
+
+
 async def screenshot_loop():
     logger.debug('[LOOP] Screenshot loop started')
     if not TARGET_URL:
         logger.warning('[LOOP] WARNING: No TARGET_URL configured; the add-on will not fetch screenshots')
 
+    global _last_sync_time, _last_sync_success, _last_error
     loop_count = 0
     next_cycle_time = None
     
@@ -381,8 +551,12 @@ async def screenshot_loop():
                                 logger.warning(f'Target URL returned status {resp.status}')
                 except Exception as e:
                     logger.error(f'Error fetching from target URL: {e}')
+                    async with _status_lock:
+                        _last_error = str(e)
         except Exception as e:
             logger.error(f'Fetch loop error: {e}')
+            async with _status_lock:
+                _last_error = str(e)
 
         if TV_IP:
             logger.debug(f'[LOOP] TV upload enabled, uploading to {TV_IP}:{TV_PORT}')
@@ -390,14 +564,33 @@ async def screenshot_loop():
                 content_id = await upload_image_to_tv_async(TV_IP, TV_PORT, str(ART_PATH), TV_MATTE, TV_SHOW_AFTER_UPLOAD)
                 if not content_id:
                     logger.warning('[LOOP] WARNING: Async upload returned no id; upload may have failed')
+                    async with _status_lock:
+                        _last_sync_success = False
+                        _last_error = 'Upload returned no ID'
                 else:
                     logger.debug(f'[LOOP] ✓ Upload complete with id: {content_id}')
+                    async with _status_lock:
+                        _last_sync_time = datetime.now()
+                        _last_sync_success = True
+                        _last_error = None
+                    await _mqtt_update_status()
             except Exception as e:
                 logger.error(f'[LOOP] ERROR: Local TV upload error: {e}')
                 import traceback
                 traceback.print_exc()
+                async with _status_lock:
+                    _last_sync_success = False
+                    _last_error = str(e)
+                await _mqtt_update_status()
         else:
             logger.debug('[LOOP] TV upload disabled (use_local_tv=false or tv_ip not set)')
+            # Still mark as success if just fetching (no TV upload)
+            if TARGET_URL:
+                async with _status_lock:
+                    _last_sync_time = datetime.now()
+                    _last_sync_success = True
+                    _last_error = None
+                await _mqtt_update_status()
 
         # Calculate cycle duration and next cycle time
         cycle_end = asyncio.get_event_loop().time()
@@ -427,11 +620,63 @@ async def screenshot_loop():
             next_cycle_time = current_time
 
 
+async def handle_status(request):
+    """API endpoint: GET /status - Returns JSON with sync status and timestamp."""
+    global _last_sync_time, _last_sync_success, _last_error
+    
+    async with _status_lock:
+        return web.json_response({
+            'last_sync': _last_sync_time.isoformat() if _last_sync_time else None,
+            'success': _last_sync_success,
+            'error': _last_error,
+            'timestamp': datetime.now().isoformat()
+        })
+
+
+async def handle_screenshot(request):
+    """API endpoint: GET /screenshot - Returns current screenshot image."""
+    try:
+        if ART_PATH.exists():
+            with open(str(ART_PATH), 'rb') as f:
+                data = f.read()
+            return web.Response(body=data, content_type='image/jpeg')
+        else:
+            return web.Response(status=404, text='Screenshot not yet available')
+    except Exception as e:
+        logger.error(f'[API] Error serving screenshot: {e}')
+        return web.Response(status=500, text=f'Error: {e}')
+
+
+async def start_api_server():
+    """Start the aiohttp web server for status/screenshot endpoints."""
+    app = web.Application()
+    app.router.add_get('/status', handle_status)
+    app.router.add_get('/screenshot', handle_screenshot)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    api_port = int(os.environ.get('API_PORT', '5000'))
+    site = web.TCPSite(runner, '0.0.0.0', api_port)
+    await site.start()
+    
+    logger.info(f'[API] Web server started on port {api_port}')
+    logger.info(f'[API]   GET http://localhost:{api_port}/status - Sync status (JSON)')
+    logger.info(f'[API]   GET http://localhost:{api_port}/screenshot - Current screenshot image')
+    
+    return runner
+
+
 async def async_main():
     logger.debug('[STARTUP] Starting screenshot loop...')
 
     loop = asyncio.get_running_loop()
+    
+    # Initialize MQTT if enabled
+    await _mqtt_connect()
+    
     screenshot_task = loop.create_task(screenshot_loop())
+    api_runner = await start_api_server()
     try:
         await asyncio.Event().wait()  # run indefinitely until cancelled/interrupt
     finally:
@@ -440,6 +685,16 @@ async def async_main():
         try:
             await screenshot_task
         except asyncio.CancelledError:
+            pass
+        
+        # Disconnect MQTT
+        await _mqtt_disconnect()
+        
+        # Clean up API server
+        try:
+            await api_runner.cleanup()
+            logger.debug('[SHUTDOWN] API server stopped')
+        except Exception:
             pass
         
         # Clean up persistent browser
@@ -457,7 +712,6 @@ async def async_main():
             except Exception:
                 pass
         
-        await runner.cleanup()
         logger.debug('[SHUTDOWN] Cleanup complete')
 
 
